@@ -6,9 +6,10 @@ import android.content.Context;
 import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.IntentFilter;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 import android.os.Bundle;
 
-import android.support.annotation.NonNull;
 import android.support.annotation.Nullable;
 import android.support.v4.content.LocalBroadcastManager;
 import android.support.v4.widget.SwipeRefreshLayout;
@@ -27,6 +28,7 @@ import android.widget.RelativeLayout;
 
 import com.hyphenate.chat.EMConversation;
 import com.hyphenate.chat.EMMessage;
+import com.hyphenate.chat.EMTextMessageBody;
 import com.vmloft.develop.library.im.IM;
 import com.vmloft.develop.library.im.R;
 import com.vmloft.develop.library.im.base.IMBaseFragment;
@@ -38,6 +40,7 @@ import com.vmloft.develop.library.im.emotion.IMEmotionGroup;
 import com.vmloft.develop.library.im.emotion.IMEmotionItem;
 import com.vmloft.develop.library.im.emotion.IMEmotionManager;
 import com.vmloft.develop.library.im.emotion.IMEmotionPager;
+import com.vmloft.develop.library.im.utils.IMChatUtils;
 import com.vmloft.develop.library.im.utils.IMDialog;
 import com.vmloft.develop.library.im.utils.IMKeyboardLayout;
 import com.vmloft.develop.library.im.utils.IMUtils;
@@ -48,6 +51,7 @@ import com.vmloft.develop.library.tools.utils.VMColor;
 import com.vmloft.develop.library.tools.utils.VMDimen;
 import com.vmloft.develop.library.tools.utils.VMStr;
 import com.vmloft.develop.library.tools.utils.VMSystem;
+import com.vmloft.develop.library.tools.widget.VMEmojiRainView;
 import com.vmloft.develop.library.tools.widget.record.VMRecordView;
 import com.vmloft.develop.library.tools.widget.toast.VMToast;
 
@@ -85,6 +89,7 @@ public class IMChatFragment extends IMBaseFragment {
     private RelativeLayout mExtRecordContainer;
     private VMRecordView mExtRecordView;
     private RelativeLayout mExtMoreContainer;
+    private VMEmojiRainView mEmojiRainView;
 
     // 键盘高度
     private int mKeyboardHeight;
@@ -164,6 +169,9 @@ public class IMChatFragment extends IMBaseFragment {
         mExtRecordContainer = getView().findViewById(R.id.im_chat_ext_record_rl);
         mExtRecordView = getView().findViewById(R.id.im_chat_ext_record_view);
         mExtMoreContainer = getView().findViewById(R.id.im_chat_ext_more_rl);
+        mEmojiRainView = getView().findViewById(R.id.im_chat_emoji_rain_view);
+
+        mEmojiRainView = getView().findViewById(R.id.im_chat_emoji_rain_view);
 
         mEmotionBtn.setOnClickListener(viewListener);
         mSendBtn.setOnClickListener(viewListener);
@@ -455,7 +463,7 @@ public class IMChatFragment extends IMBaseFragment {
      */
     private void startCall() {
         String[] menus = {
-            VMStr.byRes(R.string.im_call_video), VMStr.byRes(R.string.im_call_voice)
+                VMStr.byRes(R.string.im_call_video), VMStr.byRes(R.string.im_call_voice)
         };
         IMDialog.showAlertDialog(mContext, menus, (DialogInterface dialog, int which) -> {
             if (which == 0) {
@@ -611,9 +619,60 @@ public class IMChatFragment extends IMBaseFragment {
     }
 
     /**
+     * 检查表情雨
+     */
+    private void checkEmojiRain(EMMessage message) {
+        if (IMChatUtils.getMessageType(message) != IMConstants.MsgType.IM_TEXT_RECEIVE && IMChatUtils.getMessageType(message) != IMConstants.MsgType.IM_TEXT_SEND) {
+            return;
+        }
+        String content = IMChatUtils.getSummary(message);
+        if (VMStr.isEmpty(content)) {
+            return;
+        }
+
+        // 资源 id 方式
+        List<Integer> resList = new ArrayList<>();
+        if (content.contains(VMStr.byRes(R.string.im_emoji_rain_memeda))) {
+            resList.add(R.drawable.im_emoji_rain_lip);
+            resList.add(R.drawable.im_emoji_rain_kiss);
+        } else if (content.contains(VMStr.byRes(R.string.im_emoji_rain_birthday))) {
+            resList.add(R.drawable.im_emoji_rain_happy);
+            resList.add(R.drawable.im_emoji_rain_birthday);
+        } else if (content.contains(VMStr.byRes(R.string.im_emoji_rain_year))) {
+            resList.add(R.drawable.im_emoji_rain_happy);
+        } else if (content.contains(VMStr.byRes(R.string.im_emoji_rain_luck))) {
+            resList.add(R.drawable.im_emoji_rain_luck);
+        }
+
+        if (resList.isEmpty()) {
+            return;
+        }
+//        // bitmap 方式
+//        List<Bitmap> bitmapList = new ArrayList<>();
+//        bitmapList.add(BitmapFactory.decodeResource(getResources(), R.drawable.emoji_cake));
+//        bitmapList.add(BitmapFactory.decodeResource(getResources(), R.drawable.emoji_dog));
+        VMEmojiRainView.Config config = new VMEmojiRainView.Config.Builder()
+//                .setBitmapList(bitmapList)
+                .setResList(resList)
+                .setWidth(VMDimen.dp2px(32))
+                .setHeight(VMDimen.dp2px(32))
+                .setCount(56)
+                .setDelay(200)
+                .setMaxDuration(5000)
+                .setMinDuration(4500)
+                .setMaxScale(150)
+                .setMinScale(50)
+                .build();
+
+        mEmojiRainView.start(config);
+    }
+
+    /**
      * 刷新插入新消息
      */
     private void refreshInsert(final EMMessage message) {
+        // 触发表情雨
+        checkEmojiRain(message);
         VMSystem.runInUIThread(() -> {
             int position = IMChatManager.getInstance().getPosition(message);
             if (position >= 0) {
@@ -707,8 +766,7 @@ public class IMChatFragment extends IMBaseFragment {
     /**
      * ------------------------------- 广播接收器部分 -------------------------------
      */
-    private NewMessageReceiver mNewMessageReceiver = new NewMessageReceiver();
-    private UpdateMessageReceiver mUpdateMessageReceiver = new UpdateMessageReceiver();
+    private ChatReceiver mChatReceiver = new ChatReceiver();
 
     /**
      * 初始化注册广播接收器
@@ -716,12 +774,10 @@ public class IMChatFragment extends IMBaseFragment {
     private void initReceiver() {
         LocalBroadcastManager lbm = LocalBroadcastManager.getInstance(mContext);
         // 新消息广播接收器
-        IntentFilter newMessageFilter = new IntentFilter(IMUtils.Action.getNewMessageAction());
-        newMessageFilter.setPriority(IntentFilter.SYSTEM_HIGH_PRIORITY);
-        lbm.registerReceiver(mNewMessageReceiver, newMessageFilter);
-
-        IntentFilter updateMessageFilter = new IntentFilter(IMUtils.Action.getUpdateMessageAction());
-        lbm.registerReceiver(mUpdateMessageReceiver, updateMessageFilter);
+        IntentFilter filter = new IntentFilter(IMUtils.Action.getNewMessageAction());
+        filter.addAction(IMUtils.Action.getUpdateMessageAction());
+        filter.setPriority(IntentFilter.SYSTEM_HIGH_PRIORITY);
+        lbm.registerReceiver(mChatReceiver, filter);
     }
 
     /**
@@ -729,38 +785,26 @@ public class IMChatFragment extends IMBaseFragment {
      */
     private void unregisterReceiver() {
         // 取消新消息广播接收器
-        LocalBroadcastManager.getInstance(mContext).unregisterReceiver(mNewMessageReceiver);
-        LocalBroadcastManager.getInstance(mContext).unregisterReceiver(mUpdateMessageReceiver);
+        LocalBroadcastManager.getInstance(mContext).unregisterReceiver(mChatReceiver);
     }
 
     /**
      * 定义广播接收器
      */
-    private class NewMessageReceiver extends BroadcastReceiver {
+    private class ChatReceiver extends BroadcastReceiver {
         @Override
         public void onReceive(Context context, Intent intent) {
             //这里处理接收的信息
             String id = intent.getStringExtra(IMConstants.IM_CHAT_ID);
             if (!VMStr.isEmpty(id) && id.equals(mId)) {
                 EMMessage message = intent.getParcelableExtra(IMConstants.IM_CHAT_MSG);
-                // 当前会话设置消息已读
-                mConversation.markMessageAsRead(message.getMsgId());
-                refreshInsert(message);
-            }
-        }
-    }
-
-    /**
-     * 定义广播接收器
-     */
-    private class UpdateMessageReceiver extends BroadcastReceiver {
-        @Override
-        public void onReceive(Context context, Intent intent) {
-            //这里处理接收的信息
-            String id = intent.getStringExtra(IMConstants.IM_CHAT_ID);
-            if (!VMStr.isEmpty(id) && id.equals(mId)) {
-                EMMessage message = intent.getParcelableExtra(IMConstants.IM_CHAT_MSG);
-                refreshChange(message);
+                if (intent.getAction().equals(IMUtils.Action.getNewMessageAction())) {
+                    // 当前会话设置消息已读
+                    mConversation.markMessageAsRead(message.getMsgId());
+                    refreshInsert(message);
+                } else if (intent.getAction().equals(IMUtils.Action.getUpdateMessageAction())) {
+                    refreshChange(message);
+                }
             }
         }
     }
